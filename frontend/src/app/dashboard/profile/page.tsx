@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { getMe, updateMe, getConditions, type MeResponse, type Condition, type UserCondition } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
 
@@ -67,12 +68,17 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 export default function ProfilePage() {
   const { getToken } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
   const [token, setToken] = useState<string | null>(null);
   const [data, setData] = useState<MeResponse | null>(null);
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDirty = useRef(false);
+  const hasLoaded = useRef(false);
 
   // Form state
   const [sex, setSex] = useState<string>("M");
@@ -109,7 +115,10 @@ export default function ProfilePage() {
         setDiagnosedConditions(new Set(meData.conditions.filter((c: UserCondition) => c.is_diagnosed).map((c: UserCondition) => c.code)));
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => {
+        hasLoaded.current = true;
+        setLoading(false);
+      });
   }, [token]);
 
   const save = useCallback(async () => {
@@ -133,6 +142,7 @@ export default function ProfilePage() {
         ),
       });
       setData(result);
+      isDirty.current = false;
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -142,12 +152,43 @@ export default function ProfilePage() {
     }
   }, [token, sex, dob, height, weight, country, smoking, alcohol, activity, notes, selectedConditions, diagnosedConditions]);
 
-  // Debounced auto-save on any field change
+  // Debounced auto-save on any field change (300ms)
   useEffect(() => {
-    if (!data) return; // don't save before first load
-    const timer = setTimeout(save, 1500);
-    return () => clearTimeout(timer);
+    if (!hasLoaded.current) return; // don't save before first load
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    isDirty.current = true;
+    saveTimer.current = setTimeout(save, 300);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [sex, dob, height, weight, country, smoking, alcohol, activity, notes, selectedConditions, diagnosedConditions]);
+
+  // Save immediately when navigating away (page unload or tab switch)
+  useEffect(() => {
+    if (!hasLoaded.current) return;
+
+    // Save on page unload (browser back, URL change, tab close)
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirty.current) return;
+      e.preventDefault();
+      // Can't block reliably in modern browsers, but we try
+      save(); // fire and forget — might not complete in time
+    };
+
+    // Save when tab becomes hidden (user switches tabs)
+    const handleVisibilityChange = () => {
+      if (document.hidden && isDirty.current) {
+        if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+        isDirty.current = false;
+        save();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [save]);
 
   const bmi = (height && weight) ? computeBMI(parseFloat(height), parseFloat(weight)) : null;
   const bmiClass = bmi ? bmiCategory(bmi) : null;
