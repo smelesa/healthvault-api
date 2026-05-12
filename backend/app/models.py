@@ -14,6 +14,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     clerk_id = Column(String(255), unique=True, nullable=False, index=True)
     email = Column(String(255), nullable=True)
+    sex = Column(String(1), nullable=True)  # M or F
     created_at = Column(DateTime, default=datetime.utcnow)
 
     documents = relationship("Document", back_populates="user", lazy="selectin")

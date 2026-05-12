@@ -107,7 +107,8 @@ async def upload_document(
     # Parse biomarkers (if lab_report)
     observations = []
     if doc_type == "lab_report" and extracted_text:
-        parsed = parse_biomarkers_from_text(extracted_text, sex="M")  # TODO: get sex from user profile
+        sex = user.sex or "M"  # Default to male reference ranges if not set
+        parsed = parse_biomarkers_from_text(extracted_text, sex=sex)
         for p in parsed:
             obs = Observation(
                 id=uuid.uuid4(),

@@ -109,7 +109,10 @@ async def get_current_user(
 
     if not user:
         email = payload.get("email", "")
-        user = User(clerk_id=clerk_id, email=email)
+        # Try to get sex from Clerk public_metadata
+        public_meta = payload.get("public_metadata", {})
+        sex = public_meta.get("sex", "M") if isinstance(public_meta, dict) else "M"
+        user = User(clerk_id=clerk_id, email=email, sex=sex)
         db.add(user)
         await db.flush()
 
@@ -122,8 +125,22 @@ async def get_me(user: User = Depends(get_current_user)):
         "id": str(user.id),
         "clerk_id": user.clerk_id,
         "email": user.email,
+        "sex": user.sex,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+@router.patch("/me")
+async def update_me(
+    sex: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update current user's profile."""
+    if sex is not None and sex.upper() in ("M", "F"):
+        user.sex = sex.upper()
+        await db.flush()
+    return {"id": str(user.id), "clerk_id": user.clerk_id, "email": user.email, "sex": user.sex}
 
 
 @router.post("/webhook")
