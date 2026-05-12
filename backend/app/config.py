@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     CLERK_PUBLISHABLE_KEY: str = ""
     CLERK_SECRET_KEY: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
+    CLERK_INSTANCE: str = "equipped-stallion-81"  # Clerk instance slug (from dashboard URL)
 
     # Groq
     GROQ_API_KEY: str = ""
