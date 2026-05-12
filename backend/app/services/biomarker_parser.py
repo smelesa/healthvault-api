@@ -267,7 +267,8 @@ def parse_biomarkers_from_text(
             context = text[start:end]
 
             lab_range = parse_lab_reference_range(context)
-            standard_low, standard_high = config[f"ref_{sex.lower()}"]
+            sex_key = "ref_male" if (sex and sex.upper() in ("M", "MALE")) else "ref_female"
+            standard_low, standard_high = config[sex_key]
 
             if lab_range:
                 effective_low, effective_high = lab_range
