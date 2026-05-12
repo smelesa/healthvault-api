@@ -5,7 +5,7 @@ import jwt
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.database import get_db
 from app.models import User, UserProfile, Condition, UserCondition
 from app.config import get_settings
@@ -177,14 +177,8 @@ async def update_me(
         profile.additional_notes = additional_notes
 
     # Sync conditions if provided
-    if condition_codes is not None:
+    if condition_codes is not None and len(condition_codes) > 0:
         is_diag = is_diagnosed_map or {}
-        # Remove existing
-        await db.execute(
-            select(UserCondition).where(UserCondition.user_id == user.id).where(UserCondition.condition_id.notin_(
-                select(Condition.id).where(Condition.code.in_(condition_codes))
-            ))
-        )
         existing_result = await db.execute(
             select(UserCondition).join(Condition).where(UserCondition.user_id == user.id)
         )
@@ -196,17 +190,11 @@ async def update_me(
                 if cond:
                     uc = UserCondition(user_id=user.id, condition_id=cond.id, is_diagnosed=is_diag.get(code, False))
                     db.add(uc)
-        # Update is_diagnosed for existing
-        for code in existing_codes:
-            cond_result = await db.execute(select(Condition).where(Condition.code == code))
-            cond = cond_result.scalar_one_or_none()
-            if cond:
-                uc_result = await db.execute(
-                    select(UserCondition).where(UserCondition.user_id == user.id, UserCondition.condition_id == cond.id)
-                )
-                uc = uc_result.scalar_one_or_none()
-                if uc:
-                    uc.is_diagnosed = is_diag.get(code, uc.is_diagnosed)
+    elif condition_codes is not None:
+        # Empty list = remove ALL conditions
+        await db.execute(
+            delete(UserCondition).where(UserCondition.user_id == user.id)
+        )
 
     await db.flush()
     await db.commit()

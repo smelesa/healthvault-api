@@ -123,6 +123,8 @@ export default function ProfilePage() {
 
   const save = useCallback(async () => {
     if (!token) return;
+    // Skip if initial data hasn't loaded yet (prevents race condition overwrite)
+    if (!hasLoaded.current) return;
     setSaving(true);
     setSaved(false);
     try {
