@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models — PostgreSQL (FHIR-aligned)."""
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Index, DECIMAL, Date, JSON
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Index, DECIMAL, Date, JSON, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -14,14 +14,76 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     clerk_id = Column(String(255), unique=True, nullable=False, index=True)
     email = Column(String(255), nullable=True)
-    sex = Column(String(1), nullable=True)  # M or F
+    sex = Column(String(1), nullable=True)  # M or F — user declared, not derived from documents
     created_at = Column(DateTime, default=datetime.utcnow)
 
     documents = relationship("Document", back_populates="user", lazy="selectin")
     chat_sessions = relationship("ChatSession", back_populates="user", lazy="selectin")
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+    conditions = relationship("UserCondition", back_populates="user")
 
     def __repr__(self):
         return f"<User {self.email}>"
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
+    date_of_birth = Column(Date, nullable=True)
+    height_cm = Column(DECIMAL(5, 2), nullable=True)
+    weight_kg = Column(DECIMAL(5, 2), nullable=True)
+    country = Column(String(100), nullable=True)
+    smoking_status = Column(String(20), nullable=True)  # never, former, current
+    alcohol_use = Column(String(20), nullable=True)      # none, light, moderate, heavy
+    physical_activity = Column(String(20), nullable=True)  # sedentary, light, moderate, active
+    additional_notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="profile")
+
+    def __repr__(self):
+        return f"<UserProfile {self.user_id}>"
+
+
+class Condition(Base):
+    __tablename__ = "conditions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = Column(String(50), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    users = relationship("UserCondition", back_populates="condition")
+
+    def __repr__(self):
+        return f"<Condition {self.code}: {self.name}>"
+
+
+class UserCondition(Base):
+    __tablename__ = "user_conditions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    condition_id = Column(UUID(as_uuid=True), ForeignKey("conditions.id"), nullable=False)
+    is_diagnosed = Column(Boolean, default=False)  # True=diagnosed, False=family history/suspected
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="conditions")
+    condition = relationship("Condition", back_populates="users")
+
+    __table_args__ = (
+        Index("idx_user_conditions_user_id", "user_id"),
+        Index("idx_user_conditions_unique", "user_id", "condition_id", unique=True),
+    )
+
+    def __repr__(self):
+        return f"<UserCondition {self.user_id} - {self.condition_id}>"
 
 
 class Document(Base):

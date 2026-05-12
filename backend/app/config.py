@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8000
 
+    # Admin API key (for /api/admin/conditions CRUD)
+    ADMIN_API_KEY: str = ""
+
     # CORS — stored as JSON string in .env, parsed at runtime
     CORS_ORIGINS: str = '["http://localhost:3000"]'
 

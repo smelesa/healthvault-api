@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, documents, analyze, coach, fhir
+from app.routers import auth, documents, analyze, coach, fhir, conditions, admin
 from app.config import settings
 from app.database import engine, Base
 
@@ -25,10 +25,12 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(conditions.router, prefix="/api/conditions", tags=["conditions"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
 app.include_router(analyze.router, prefix="/api/analyze", tags=["analyze"])
 app.include_router(coach.router, prefix="/api/coach", tags=["coach"])
 app.include_router(fhir.router, prefix="/api/fhir", tags=["fhir"])
+app.include_router(admin.router, prefix="/api/admin/conditions", tags=["admin"])
 
 
 @app.get("/api/health")
