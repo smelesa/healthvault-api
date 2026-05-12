@@ -34,9 +34,16 @@ async function apiFetch<T>(
 
 // ── Auth ────────────────────────────────────────────────
 export async function getMe(token: string) {
-  return apiFetch<{ id: string; email: string; clerk_id: string; created_at: string }>(
+  return apiFetch<{ id: string; email: string; sex: string | null; clerk_id: string; created_at: string }>(
     '/api/auth/me',
     { token }
+  );
+}
+
+export async function updateMe(token: string, sex: string) {
+  return apiFetch<{ id: string; email: string; sex: string }>(
+    '/api/auth/me',
+    { token, body: { sex }, method: 'PATCH' }
   );
 }
 
