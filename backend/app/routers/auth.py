@@ -82,6 +82,7 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
         user = User(clerk_id=clerk_id, email=email, sex=sex)
         db.add(user)
         await db.flush()
+        await db.commit()
     return user
 
 
@@ -208,6 +209,7 @@ async def update_me(
                     uc.is_diagnosed = is_diag.get(code, uc.is_diagnosed)
 
     await db.flush()
+    await db.commit()
     conditions = await _user_conditions(user.id, db)
     return {
         "id": str(user.id),
