@@ -1,6 +1,4 @@
 // HealthVault API client
-// All calls go through the backend API, authenticated via Clerk JWT
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://srv1424731.hstgr.cloud';
 
 async function apiFetch<T>(
@@ -13,38 +11,78 @@ async function apiFetch<T>(
   } = {}
 ): Promise<T> {
   const { token, body, method = 'GET', headers: extraHeaders = {} } = options;
-
   const headers: Record<string, string> = { ...extraHeaders };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
+  const res = await fetch(`${API_URL}${path}`, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(error.detail || `API error ${res.status}`);
   }
-
   return res.json();
 }
 
 // ── Auth ────────────────────────────────────────────────
-export async function getMe(token: string) {
-  return apiFetch<{ id: string; email: string; sex: string | null; clerk_id: string; created_at: string }>(
-    '/api/auth/me',
-    { token }
-  );
+export interface UserProfile {
+  date_of_birth: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  country: string | null;
+  smoking_status: string | null;
+  alcohol_use: string | null;
+  physical_activity: string | null;
+  additional_notes: string | null;
 }
 
-export async function updateMe(token: string, sex: string) {
-  return apiFetch<{ id: string; email: string; sex: string }>(
-    '/api/auth/me',
-    { token, body: { sex }, method: 'PATCH' }
-  );
+export interface UserCondition {
+  code: string;
+  name: string;
+  category: string;
+  is_diagnosed: boolean;
+  notes?: string | null;
+}
+
+export interface MeResponse {
+  id: string;
+  email: string;
+  sex: string | null;
+  clerk_id: string;
+  created_at: string;
+  profile: UserProfile;
+  conditions: UserCondition[];
+}
+
+export async function getMe(token: string): Promise<MeResponse> {
+  return apiFetch<MeResponse>('/api/auth/me', { token });
+}
+
+export async function updateMe(token: string, body: {
+  sex?: string;
+  date_of_birth?: string;
+  height_cm?: number;
+  weight_kg?: number;
+  country?: string;
+  smoking_status?: string;
+  alcohol_use?: string;
+  physical_activity?: string;
+  additional_notes?: string;
+  condition_codes?: string[];
+  is_diagnosed_map?: Record<string, boolean>;
+}): Promise<MeResponse> {
+  return apiFetch<MeResponse>('/api/auth/me', { token, body, method: 'PATCH' });
+}
+
+// ── Conditions ────────────────────────────────────────────
+export interface Condition {
+  code: string;
+  name: string;
+  category: string;
+  description?: string;
+}
+
+export async function getConditions(): Promise<Condition[]> {
+  return apiFetch<Condition[]>('/api/conditions');
 }
 
 // ── Documents ────────────────────────────────────────────
@@ -68,118 +106,88 @@ export interface Observation {
   display_name: string;
   value: number | null;
   unit: string;
-  reference_range_low: number | null;
-  reference_range_high: number | null;
-  interpretation: string;
+  interpretation?: string;
   effective_date?: string;
+  reference_range_low?: number | null;
+  reference_range_high?: number | null;
 }
 
-export interface DocumentListResponse {
-  items: Document[];
-  total: number;
-  page: number;
-  limit: number;
+export interface UploadResponse {
+  id: string;
+  document_type: string;
+  file_path: string;
+  observations: Observation[];
+  created_at: string;
 }
 
-export async function listDocuments(token: string, params: {
-  type?: string;
-  page?: number;
-  limit?: number;
-  search?: string;
-} = {}) {
-  const q = new URLSearchParams();
-  if (params.type) q.set('type', params.type);
-  if (params.page) q.set('page', String(params.page));
-  if (params.limit) q.set('limit', String(params.limit));
-  if (params.search) q.set('search', params.search);
-
-  return apiFetch<DocumentListResponse>(`/api/documents?${q}`, { token });
+export interface BiomarkerSummary {
+  items: Observation[];
+  total?: number;
 }
 
-export async function getDocument(token: string, docId: string) {
-  return apiFetch<DocumentDetail>(`/api/documents/${docId}`, { token });
+export async function listDocuments(token: string, params: { limit?: number; page?: number; type?: string } = {}) {
+  const sp = new URLSearchParams();
+  if (params.limit) sp.set('limit', String(params.limit));
+  if (params.page) sp.set('page', String(params.page));
+  if (params.type) sp.set('type', params.type);
+  return apiFetch<{ items: Document[]; total: number; page: number }>(`/api/documents?${sp}`, { token });
 }
 
 export async function uploadDocument(token: string, file: File, documentType?: string) {
   const formData = new FormData();
   formData.append('file', file);
   if (documentType) formData.append('document_type', documentType);
-
   const res = await fetch(`${API_URL}/api/documents/upload`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` },
     body: formData,
   });
-
-  if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
-  return res.json();
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail || `Upload failed ${res.status}`);
+  }
+  return res.json() as Promise<UploadResponse>;
 }
 
-export async function deleteDocument(token: string, docId: string) {
-  return apiFetch<{ status: string }>(`/api/documents/${docId}`, {
-    method: 'DELETE',
-    token,
-  });
-}
-
-// ── Analyze ──────────────────────────────────────────────
-export interface AnalysisResult {
-  biomarkers: Observation[];
-  deviations: Observation[];
-  risk_factors: string[];
-  recommendations: string[];
-  summary: string;
-  confidence: number;
+export async function listBiomarkers(token: string) {
+  return apiFetch<BiomarkerSummary>('/api/analyze/biomarkers', { token });
 }
 
 export async function analyzeDocuments(token: string, documentIds?: string[]) {
-  return apiFetch<AnalysisResult>('/api/analyze', {
-    method: 'POST',
-    token,
-    body: { document_ids: documentIds },
-  });
-}
-
-export async function listBiomarkers(token: string, params: {
-  code?: string;
-  date_from?: string;
-  date_to?: string;
-} = {}) {
-  const q = new URLSearchParams();
-  if (params.code) q.set('code', params.code);
-  if (params.date_from) q.set('date_from', params.date_from);
-  if (params.date_to) q.set('date_to', params.date_to);
-
-  return apiFetch<{ items: Observation[] }>(`/api/analyze/biomarkers?${q}`, { token });
+  return apiFetch<{ biomarkers: Observation[]; deviations: Observation[]; risk_factors: string[]; recommendations: string[]; summary: string; confidence: number }>(
+    '/api/analyze',
+    { token, body: { document_ids: documentIds }, method: 'POST' }
+  );
 }
 
 // ── Coach ────────────────────────────────────────────────
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: string;
   content: string;
-  sources: string[];
-  created_at: string;
+  sources?: string[];
+  created_at?: string;
 }
 
-export interface ChatSession {
-  session_id: string;
-  messages: ChatMessage[];
+export async function createCoachSession(token: string) {
+  return apiFetch<{ session_id: string }>('/api/coach/session', { token, method: 'POST' });
 }
 
-export async function createChatSession(token: string) {
-  return apiFetch<{ session_id: string }>('/api/coach/session', {
-    method: 'POST',
-    token,
-  });
+export async function coachChat(token: string, sessionId: string, message: string) {
+  return apiFetch<{ reply: string; sources?: string[] }>('/api/coach/chat', { token, body: { session_id: sessionId, message }, method: 'POST' });
 }
 
-export async function chat(token: string, sessionId: string, message: string) {
-  return apiFetch<{ reply: string; sources: string[]; disclaimer: string }>(
-    '/api/coach/chat',
-    { method: 'POST', token, body: { session_id: sessionId, message } }
-  );
+export async function getCoachHistory(token: string, sessionId: string) {
+  return apiFetch<{ messages: ChatMessage[] }>(`/api/coach/history?session_id=${sessionId}`, { token });
 }
 
-export async function getChatHistory(token: string, sessionId: string) {
-  return apiFetch<ChatSession>(`/api/coach/history?session_id=${sessionId}`, { token });
+// ── Documents ────────────────────────────────────────────
+export async function deleteDocument(token: string, docId: string) {
+  return apiFetch<void>(`/api/documents/${docId}`, { token, method: 'DELETE' });
 }
+
+// Aliases (for backward compat with existing pages)
+export {
+  createCoachSession as createChatSession,
+  coachChat as chat,
+  getCoachHistory as getChatHistory,
+};
